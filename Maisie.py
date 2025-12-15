@@ -20,6 +20,7 @@ class Maisie:
         self.minFilled = int(self.mazeDims * mazeDims * 4 / 5) # 80% filled
         self.rlMz = [[Square(r, c) for c in range(0, mazeDims)] for r in range(0, mazeDims)]
         self.mmz = [[Square(r, c) for c in range(0, mazeDims)] for r in range(0, mazeDims)]
+        self.steps = [0, 0, 0]
         self.row = 0
         self.col = 0
         self.startCol = 0
@@ -28,13 +29,11 @@ class Maisie:
         self.prevCol = -1
         self.heading = 0    # 0=N, 1=W, 2=S, 3=E
         self.prevHdg = 0
-        self.trailNo = 0
+        self.trailNo = 1
         self.retrace = False
         self.leftFirst = True
         self.bBegin = True
         self.stop = False
-        #self.maxVisits = 4
-        #self.swapCount = 0
         Square.setup(mazeDims)
         
     def startup(self, startCol: int) -> None:
@@ -70,7 +69,9 @@ class Maisie:
         self.trailNo = tNo
         self.retrace = False
         self.leftFirst = lFirst
-        #self.stop = False
+        for y in range(self.mazeDims):
+            for x in range(self.mazeDims):
+                self.mmz[y][x].numVisits = 2
 
     def numUnvisited(self) -> int:
         count = 0
@@ -103,6 +104,14 @@ class Maisie:
         ax.add_patch(triangle)
         return triangle
 
+    def drawReset(self, ax) -> None:
+        currSq = self.mmz[self.row][self.col]
+        prevSq = self.mmz[self.prevRow][self.prevCol]
+        prevSq.drawMeMaisie(ax, False)
+        currSq.drawMeMaisie(ax, True)
+        patch = self.drawMe(ax)
+        ax.add_patch(patch)
+
 #    def textDisplay(self):
  #       cmpss = "NWSE"
   #      ssq = cast(Square, self.mmz[self.row][self.col])
@@ -118,6 +127,7 @@ class Maisie:
 
     def go(self, ax, doScan: bool)-> bool:    # all the tasks needed in one Maisie move
         self.move()
+        self.steps[self.trailNo - 1] += 1
         currSq = self.mmz[self.row][self.col]
         if currSq.numVisits == 0:
             self.scan()
@@ -131,11 +141,16 @@ class Maisie:
         patch = self.drawMe(ax)
         ax.add_patch(patch)
         nu = self.numUnvisited()
-        if nu == 0:
+        if (nu == 0) and (self.trailNo == 1):
             y, x = self.findTarget(ax)
             print("Target is " + str((y, x)))
-            self.stop = True
             self.reset(2, True)
+            self.drawReset(ax)
+        if (self.atTarget()) and (self.trailNo == 2):
+            self.reset(3, False)
+            self.drawReset(ax)
+        if (self.atTarget()) and (self.trailNo == 3):
+            self.stop = True
         return (currSq.row != 0) or (currSq.col != self.startCol)
     
     def remove2patches(self, ax) -> None: # and 4 lines
@@ -187,7 +202,6 @@ class Maisie:
 
     def choose(self, leftFirst: bool) -> int:    # output NWSE
         cmps = "NWSE"
-        # Keep count of options at this square
         ssq = cast(Square, self.mmz[self.row][self.col])
         scoDir = (0, -1) # initialize
 
@@ -203,15 +217,17 @@ class Maisie:
         for i in range (0,4): # choose options
             fen = ssq.hasFence(dd)
             if not fen:
-                sco = 4 - i
-                ngh = ssq.getNeighbour(dd)
-                if (ngh is not None) and (ngh.numVisits == 0):
-                    sco += 5 # "bonus" points for not visited
-                #print(cmps[dd] + ":" + str(sco) + ";", end="")
-                if sco > scoDir[0]:
-                    scoDir = (sco, dd)
+                if self.trailNo == 1:
+                    sco = 4 - i
+                    ngh = ssq.getNeighbour(dd)
+                    if (ngh is not None) and (ngh.numVisits == 0):
+                        sco += 5 # "bonus" points for not visited
+                    if sco > scoDir[0]:
+                        scoDir = (sco, dd)
+                else:
+                    scoDir = (i, dd)
+                    break
             dd = (dd + stp) % 4
-        #print ("=>" + cmps[scoDir[1]])
         self.heading = scoDir[1] # direction with highest score, including "bonus" points
         return self.heading #NWSE
     

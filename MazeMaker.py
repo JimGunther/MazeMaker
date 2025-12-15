@@ -513,8 +513,7 @@ ssq.numVisits += 1
 
 mai.choose(True)
 mai.drawMe(vu.axMais)
-ani = anim.FuncAnimation(vu.fig, vu.vwUpdate1, frames=mai.gen1, interval=150, blit=True, repeat=False, cache_frame_data=False)
+ani = anim.FuncAnimation(vu.fig, vu.vwUpdate1, frames=mai.gen1, interval=120, blit=True, repeat=False, cache_frame_data=False)
 vu.show()
-ani = None
-
-#print("Start 2")
+for i in range (1, 4):
+    print("Steps in trail " + str(i) + ": " + str(mai.steps[i - 1]))

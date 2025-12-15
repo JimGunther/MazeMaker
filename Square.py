@@ -99,6 +99,7 @@ class Square:
         ax.add_patch(rect)
         self.drawFences2(ax)
         t = (2, 4) # no. of patches and lines added
+        assert self.numVisits < 5, "Looping!"
         return t
 
     def drawFences2(self, ax) -> None:
