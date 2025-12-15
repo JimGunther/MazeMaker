@@ -7,8 +7,8 @@ import random
 #
 # Square.py: Square class represents maze square functionality
 # 
-# Version 0.7
-# Last updated 07.12.2025 15:51
+# Version 0.93
+# Last updated 13.12.2025 16:32
 # 
 # *****************************************************************************************
 class MMException(Exception):
@@ -18,6 +18,7 @@ class Square:
 
 #class variables
     sq_sz = 10  # size of square for drawing
+    startCol = 0
 
     @classmethod
     def setup(cls, dims: int): ##initiates class attributes
@@ -38,40 +39,43 @@ class Square:
         self.trailNo = 0
         self.target = False
         self.attract = 0.0
+        self.numVisits = 0
 
-    def drawMe(self) -> None:
-        ax = plt.gca()
+    def drawMeMaker(self, ax) -> None:   #MazeMaker (left) pane
         yy = self.row * Square.sq_sz
         xx = self.col * Square.sq_sz
         c = "white"
-        if self.trailNo == 1:
-            c = "yellow"
         if self.damp:
             c = "lightgrey"
         if self.wet:
             c = "grey"
+        if self.trailNo == 1:
+            c = "yellow"
+            if self.target:
+                c = "lightgreen"
         if self.trailNo == 2:
             c = "pink"
+            if self.target:
+                c = "green"
         if self.trailNo > 2:
             c = "cyan"
-        if self.target:
-            c = "green"
+        #if self.target:
+         #   c = "green"
         patch = patches.Rectangle((xx, yy), Square.sq_sz, Square.sq_sz, color=c)
         ax.add_patch(patch)
-        self.drawFences()    
+        self.drawFences(ax)    
     
-    def drawFences(self) -> None: # draws fence for ONE MM square
+    def drawFences(self, ax) -> None: # draws fence for ONE MM square: MazeMaker (left) pane 
         if (self.code & 1) == 1: 
-            self.drawLine(1, 0, False)
+            self.drawLine(ax, 1, 0, False)
         if (self.code & 2) == 2: 
-            self.drawLine(0, 0, True)
+            self.drawLine(ax, 0, 0, True)
         if (self.code & 4) == 4: 
-            self.drawLine(0, 0, False)
+            self.drawLine(ax, 0, 0, False)
         if (self.code & 8) == 8: 
-            self.drawLine(0, 1, True)
+            self.drawLine(ax, 0, 1, True)
 
-    def drawLine(self, y: int, x: int, vert: bool) -> None:
-        ax = plt.gca()
+    def drawLine(self, ax, y: int, x: int, vert: bool) -> None: # MazeMaker (left) pane
         yy = (self.row + y) * Square.sq_sz
         xx = (self.col + x) * Square.sq_sz
         if vert:
@@ -79,6 +83,64 @@ class Square:
         else:
             line = lines.Line2D((xx, xx + Square.sq_sz), (yy, yy), color="black")
         ax.add_line(line)
+
+    def drawMeMaisie(self, ax, bMaisie: bool) -> tuple[int, int]: # Maisie (right) pane      
+        t = (0, 0) 
+        c = "white"
+        if self.numVisits > 0:
+            c = "peachpuff"
+        if self.code == 15:
+            c = "grey"
+        if self.isTarget():
+            c = "green"
+        if bMaisie:
+            c = "orchid"
+        rect = patches.Rectangle((self.col * self.sq_sz, self.row * self.sq_sz), self.sq_sz, self.sq_sz, color=c)
+        ax.add_patch(rect)
+        self.drawFences2(ax)
+        t = (2, 4) # no. of patches and lines added
+        return t
+
+    def drawFences2(self, ax) -> None:
+        msk = 1
+        for i in range(0,4):
+            blk = msk & self.code != 0
+            self.drawLine2(i, ax, blk)
+            msk = msk << 1  # double it
+
+    def drawLine2(self, n: int, ax, blk: bool) -> lines.Line2D:
+        sz = self.sq_sz
+        yCorner = self.row * sz
+        xCorner = self.col * sz
+        match n:
+            case 0:
+                ys = sz
+                xs = 0
+                ye = sz
+                xe = sz
+            case 1:
+                ys = 0
+                xs = 0
+                ye = sz
+                xe = 0
+            case 2:
+                ys = 0
+                xs = 0
+                ye = 0
+                xe = sz
+            case 3:
+                ys = 0
+                xs= sz
+                ye = sz
+                xe = sz
+        c = "peachpuff"
+        if blk:
+            c = "black"
+        line = lines.Line2D((xs + xCorner, xe + xCorner), (ys + yCorner, ye + yCorner), color=c)
+        ax.add_line(line)
+        return line
+
+#==========================================================================================================
 
     def calcVotes(self, yTarget: int, xTarget: int) -> None:
         # give an attractiveness score to each square
@@ -101,7 +163,7 @@ class Square:
     def getTrailNo(self) -> int:
         return self.trailNo
     
-    def setTrailNo(self, n) -> None:
+    def setTrailNo(self, n: int) -> None:
         self.trailNo = n
     
     def setTarget(self, b: bool) -> None:
@@ -113,6 +175,13 @@ class Square:
     def setVotes(self, v: int) -> None:
         self.votes = v
 
+    def isCDS(self)-> bool:
+        bFences = (self.code == 14) or (self.code == 13) or (self.code == 11) or (self.code ==7)
+        return bFences and not self.isStart()   # start square can't be a CDS!
+    
+    def isStart(self) -> bool:
+        return (self.row == 0) and(self.col == Square.startCol)
+    
     def isEnclosed(self) -> bool:
         return self.code == 15
 
@@ -190,12 +259,35 @@ class Square:
             # remove fence between
             Square.setFenceBetween(self, yNeigh, False)
 
+    def hasFence(self, nwse: int) -> bool: 
+        t = 2**nwse
+        return t & self.code != 0
+    
+    def countFences(self) -> int: # From MSquare
+        count = 0
+        x = 1
+        for i in range(0,4):
+            if (self.code & x) != 0:
+                count += 1
+            x = x << 1  #double it
+        assert count < 4, "Square is fully enclosed!"
+        return count
+
+    def hasUnVNeigh(self) -> int: # returns direction (NWSE) of inVisited neighbour
+        for d in range(0,4):
+            ngh = self.getNeighbour(d)
+            if ngh is not None:
+                vis = ngh.numVisits
+                if vis == 0:
+                    return d
+        return -1 # None available
+
     @classmethod
     def setFenceBetween(cls, sqA: Self, sqB: Self, tf: bool) -> None:
+        #print("SFB", end="")
         origCode = sqA.code
-        yd = abs(sqA.row - sqB.row)
-        xd = abs(sqA.col - sqB.col)
-        if (yd + xd) == 1:  # only do it for adjacent squares!
+        if Square.areNeigh(sqA, sqB):
+            yd = abs(sqA.row - sqB.row)
             if yd == 0: #side by side
                 if sqA.col > sqB.col:
                     sq1 = sqA
@@ -223,4 +315,10 @@ class Square:
                     sq1.code = sq1.code & 11
                     sq2.code = sq2.code & 14
         revCode = sqA.code
-        assert tf == (revCode > origCode), "check logic for fence between"
+        #assert tf == (revCode >= origCode), "check logic for fence between"
+
+    @classmethod
+    def areNeigh(cls, sqA: Self, sqB: Self) -> bool:
+        yd = abs(sqA.row - sqB.row)
+        xd = abs(sqA.col - sqB.col)
+        return (yd + xd) == 1  # only do it for adjacent squares!

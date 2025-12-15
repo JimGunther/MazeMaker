@@ -2,12 +2,13 @@
 #
 # MazeMaker.py: controlling code for maze maker
 # 
-# Version 0.91
-# Last updated 07.12.2025 14:58
+# Version 0.94
+# Last updated 15.12.2025 10:36
 #  
 # *****************************************************************************************
 
 from matplotlib import pyplot as plt
+import matplotlib.animation as anim
 from typing import cast, List
 import random
 from datetime import datetime
@@ -19,7 +20,15 @@ from Maisie import Maisie
 from View import View
 
 print()
-mazeDims = int(input("\nSize of maze (NxN)"))
+mazeDims = 0
+ctnu = True
+while ctnu:
+    try:
+        mazeDims = int(input("\nSize of maze (NxN)"))
+        ctnu = False
+    except ValueError:
+        print("Number unrecognised: try again!")
+
 sqSize = 10
 startCol = 0
 startRow = 0
@@ -59,6 +68,7 @@ def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only 
     global mazeDims
     global retries
     global sqTarget
+    global startCol
     
     # Clean up first
     for y in range(0, mazeDims):
@@ -74,6 +84,7 @@ def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only 
     # further initialization for trail 1 only------------------------------------------------------------------
     if (trNo == 1):
         startCol = random.randint(0, mazeDims - 1)
+        Square.startCol = startCol
         startRow = 0
         i = int(mazeDims / 2)
         targetCol = random.randint(i, mazeDims - 2)
@@ -101,7 +112,7 @@ def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only 
 def setupTargetQuad(sqTgt: Square, tf: bool) -> None:
     # set all 4 target flags and delete fences between them (tf == True) else reverse the changes
 
-    print("Target quad setup:" + str((sqTgt.row, sqTgt.col)) + " " + str(tf))
+    #print("Target quad setup:" + str((sqTgt.row, sqTgt.col)) + " " + str(tf))
     targetRow = sqTgt.row
     targetCol = sqTgt.col
     for i in range(0,2):
@@ -139,7 +150,7 @@ def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
     innerLoopCount = 0
     p.reset(startSq, trNo)
     cdsCount = 0
-    print("Yellow count: " + str(trailCount(1)))
+    #print("Yellow count: " + str(trailCount(1)))
     bStop = False
 
     while not bStop:
@@ -153,15 +164,15 @@ def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
                 if trNo < 3:
                     print("Reached target: " + str((p.yPos, p.xPos)))
                     # p trail length measures path itself; trailCount() counts [yellow] squares
-                    assert len(p.path) == trailCount(trNo), "Path length != yellowCount" + str(len(p.path)) + ";" + str(trailCount(trNo))
+                    #assert len(p.path) == trailCount(trNo), "Path length != yellowCount" + str(len(p.path)) + ";" + str(trailCount(trNo))
         else:
             assert(p.culdesac)
-            print("CDS")
+            print("CDS;", end="")
             bStop = True
             p.removeTrail(trNo)
             assert len(p.path) == 0, "probe trail not empty!"
-            #assert trailCount(trNo) == 0, "Still " + str(trailCount(1)) + " squares on trail " + str(trNo)
             #p.reset(startSq, trNo)
+
             retries += 1
             if innerLoopCount > 60:
                 print ("Too many iterations")
@@ -209,8 +220,8 @@ def t1TrailMake(prevTgt:Square, p: Probe) -> bool:   # keeps trying trail 1 unti
         #    mz[0][0].wet = True
         bSoggy = isSoggy()
     nDamp = p.makeDamp()
-    print ("Probe trail length: " + str(len(p.path)))
-    print ("No. damps: " + str(nDamp))
+    print ("Path length: " + str(len(p.path)))
+    #print ("No. damps: " + str(nDamp))
     p.removeTrailFences()
     p.updateTrailSquares(1)
     return bSoggy
@@ -231,9 +242,10 @@ def t2TrailMake(damps: List[Square], p: Probe) -> bool:
         if bOK:
             p.removeTrailFences()
             p.updateTrailSquares(2)
-            if len(p.path) > 0:
-                print ("Second trail created.")
-    print("Retries @ trail 2:" + str(retries))
+            #if len(p.path) > 0:
+             #   print ("Second trail created.")
+    if retries > 1:
+        print("Retries @ trail 2:" + str(retries))
 
     ngh = sq2.t1Neighbour()
     if ngh is not None:
@@ -244,6 +256,26 @@ def t2TrailMake(damps: List[Square], p: Probe) -> bool:
         print ("PINK COUNT!:" + str(nPink))
     return bOK
 
+def makeTarget1and2() -> None:
+    sq1 = sqTarget # TEMP: to make them Square objects only
+    sq2 = sqTarget
+    ngh: List[Square] = []
+    for y in range(0, 2):
+        for x in range(0,2):
+            sq = mz[sqTarget.row + y][sqTarget.col + x]
+            if sq.getTrailNo() == 1:
+                sq1 = sq
+            if sq.getTrailNo() == 2:
+                sq2 =sq
+            if sq.getTrailNo() == 0:
+                ngh.append(sq)
+    assert len(ngh) == 2, "Two white squares in target"
+    if Square.areNeigh(sq1, ngh[0]):
+        ngh[0].setTrailNo(1)
+        ngh[1].setTrailNo(2)
+    else:
+        ngh[0].setTrailNo(2)
+        ngh[1].setTrailNo(1)
 
 # Culdesac and mopup section--------------------------------------------------------------------
 
@@ -257,7 +289,7 @@ def addCulDeSacs() -> None:
     while bCntnu:
         #First, find a yellow square with at least one white neighbour 
         for sq in listA:
-            if sq.whiteCount() > 0:
+            if (sq.whiteCount() > 0) and not sq.target:
                 listB.append(sq)
     
         lng = len(listB)
@@ -283,7 +315,39 @@ def mopup() -> None:
     wList = twoTrailSquares(0, 0)
     lng = len(wList)
     for i in range(0, lng):
-        wList[i].tryYellow()
+        if not wList[i].isTarget():
+            wList[i].tryYellow()
+    
+def cleanupTargetQuad(sqT: Square) -> None:
+    yT = sqT.row
+    xT = sqT.col
+    sq = mz[yT][xT]    
+    cuTQ(sq, 2, 1)
+    cuTQ(sq, 4, 2)
+    cuTM(sq, 6)
+    sq = mz[yT + 1][xT]
+    cuTQ(sq, 2, 1)
+    cuTQ(sq, 1, 0)
+    cuTM(sq, 3)
+    sq = mz[yT][xT + 1]
+    cuTQ(sq, 8, 3)
+    cuTQ(sq, 4, 2)
+    cuTM(sq, 12)
+    sq = mz[yT + 1][xT + 1]
+    cuTQ(sq, 8, 3)
+    cuTQ(sq, 4, 2)
+    cuTM(sq, 9)
+
+def cuTQ(sq: Square, flg:int, dirn: int) -> None: # restore outer wall
+    if (sq.code & flg) == 0: # no fence
+        ngh = sq.getNeighbour(dirn)
+        if ngh is not None:
+            if ngh.trailNo > 2:
+                Square.setFenceBetween(sq, ngh, True)   #put in fence
+
+def cuTM(sq: Square, flag: int) -> None: # clean up target middle
+    sq.code = sq.code & flag
+
 
 # Helper and support methods----------------------------------------------------
 
@@ -310,7 +374,7 @@ def chooseT2Start(damps: List[Square], tgt: Square) -> Square:
             r = random.randint(0, nDamp - 1)
         sq2 = damps[r]   # start square for trail 2
         bOK = not tooClose(sq2, tgt)
-        print("!", end="") # TEMP!!
+        #print("!", end="") # TEMP!!
     return sq2
 
 def tooClose(sqA: Square, sqB: Square) -> bool:
@@ -323,9 +387,33 @@ def twoTrailSquares(trNoA: int, trNoB) -> List[Square]:
     for y in range(0, mazeDims):
         for x in range(0, mazeDims):
             sq = mz[y][x]
-            if (sq.trailNo == trNoA) or (sq.trailNo == trNoB):
+            if ((sq.trailNo == trNoA) or (sq.trailNo == trNoB)):# and not isTargetNeighbour(sq):
                 whites.append(sq)
     return whites
+
+#def isTargetNeighbour(sq: Square) -> bool: # True if at least one neighbour is a green square
+ #   bOK = True
+  #  for i in range(4):
+   #     ngh = sq.getNeighbour(i)
+    #    if ngh is not None:
+     #       if ngh.target:
+      #          bOK = False
+    #return bOK
+
+def scoreChecker() -> bool: # checks codes on both sides of the fence are consistent
+    for y in range(1, mazeDims):
+        for x in range(1, mazeDims):
+            c1 = mz[y][x].code
+            b1 = (c1 & 2) != 0
+            c2 = mz[y][x - 1].code
+            b2 = (c2 & 8) != 0
+            assert b1 == b2, "L<>R"
+            c2 = mz[y - 1][x].code
+            b1 = (c1 & 4) != 0
+            b2 = (c2 & 1) != 0
+            assert b1 == b2, "U<>D"
+
+    return  True# TEMP
 
 def trailCount(trNo: int) -> int:
     count = 0
@@ -342,19 +430,19 @@ def whiteCount() -> int:
 def pinkCount() -> int:
     return trailCount(2)       
 
-def mazeToCodes() -> List[List[int]]:
-    outRow = []
+def mazeToMaisie(destMz: List[List[Square]]) -> None:
     for y in range(0, mazeDims):
-        row= []
         for x in range(0, mazeDims):
-            row.append(mz[y][x].code)
-        outRow.append(row)
-    return outRow
+            destMz[y][x].code = mz[y][x].code
+            #print(str(mz[y][x].code) + ";", end ="")
+        #print()
+    return
 
 def dryAll() -> None:
     for y in range(0, mazeDims):
         for x in range(0, mazeDims):
             mz[y][x].wet = False
+
 
 #def fencesToFile() -> None:
  #   chars = " |_L"
@@ -388,43 +476,45 @@ while b:
     except Exception as other:
         raise other
 
+makeTarget1and2()
 # Now fill in the other squares with "culdesac" trails
 maxWhiteCount = int(mazeDims * mazeDims / 20)
-print("------------------------------------------------------------------------------")
-print ("White pre culdesacs: " + str(whiteCount()))
+print("-------------------------------------------------------------------------")
+print ("White pre culdesacs: " + str(whiteCount()) + "; ", end="")
 addCulDeSacs()
-print ("White pre mop-up: " + str(whiteCount()))
+print ("White pre mop-up: " + str(whiteCount()) + "; ", end="")
 
 # Use a different technique to mop up remaining white squares
+
 while whiteCount() > 0:
     mopup()
 print ("mopped up!")
-
+scoreChecker()
+print()
+print("=========================================================================")
+print()
 vu.drawMM(mz) # MazeMaker (left side) maze
-
 #fencesToFile()
-
 #========================= Maisie Stuff!=============================================
-vu.drawEmptyMais() # Maisie (right side) maze
-#vu.show()
-mai = Maisie(mazeDims, startCol)
-assert mai.sq is not None, "Maisie square is None!"
-print ("maisie initial pos: " + str((mai.sq.row, mai.sq.col)))
-mai.startup() #sets up neighbours and sets outer fences  
-mai.getRealMaze(mazeToCodes()) # gets maze infor form MazeMaker stage
-mai.sq.drawMe(True)
-mai.scan()
-mai.drawMe()
-mai.choose(True)
-vu.show()
-sys.exit()
+mai = Maisie(mazeDims)
+vu.drawEmptyMais(mai) # Maisie (right side) maze
 
-for x in range (0,3):
-    mai.scan()
-    mai.textDisplay()
-    mai.heading = mai.choose(True)
-    if mai.hasChoice():
-        mai.retrace = False
-    sHead = "NWSE"
-    print ("Chosen move: " + sHead[mai.heading])
-    mai.move()
+mai.startup(startCol) #sets up neighbours and sets outer fences
+mazeToMaisie(mai.rlMz) # xfers code values from original maze to Maisie's copy 
+print ("Maisie initial pos: " + str((mai.row, mai.col)))
+passNo = 1
+
+plt.sca(vu.axMais)
+
+mai.scan()
+ssq = mai.mmz[mai.row][mai.col]
+ssq.drawMeMaisie(vu.axMais, True)
+ssq.numVisits += 1
+
+mai.choose(True)
+mai.drawMe(vu.axMais)
+ani = anim.FuncAnimation(vu.fig, vu.vwUpdate1, frames=mai.gen1, interval=150, blit=True, repeat=False, cache_frame_data=False)
+vu.show()
+ani = None
+
+#print("Start 2")
