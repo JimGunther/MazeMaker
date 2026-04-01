@@ -7,8 +7,8 @@ import random
 #
 # Square.py: Square class represents maze square functionality
 # 
-# Version 0.93
-# Last updated 13.12.2025 16:32
+# Version 0.1
+# Last updated 31.03.2026 15:19
 # 
 # *****************************************************************************************
 class MMException(Exception):
@@ -21,8 +21,9 @@ class Square:
     startCol = 0
 
     @classmethod
-    def setup(cls, dims: int): ##initiates class attributes
-        cls.mazeDims = dims
+    def setup(cls, ht: int, wid: int): ##initiates class attributes
+        cls.ht = ht
+        cls.wid = wid
 
     def __init__(self, r:int, c:int):
         self.row = r
@@ -148,7 +149,7 @@ class Square:
         xd = (self.col - xTarget) * (self.col - xTarget)
         yd = (self.row - yTarget) * (self.row - yTarget)
         att = int(math.sqrt(xd + yd))
-        att = int(math.sqrt(2.0) * Square.mazeDims) - att
+        att = int(math.sqrt(2.0 * Square.ht * Square.wid)) - att
         self.votes = att
 
     def getPos(self) -> tuple:

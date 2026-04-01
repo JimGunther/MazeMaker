@@ -38,7 +38,7 @@ class Probe:
     def getTrailSq(self, n: int) -> Square:
         return self.path[n]
 
-    def move(self, trailNo: int, dims:int) -> Square | None: #returns new square or None if no valid moves
+    def move(self, trailNo: int) -> Square | None: #returns new square or None if no valid moves
         oldY = self.yPos
         oldX = self.xPos
         validMoves: List[int] = []
@@ -65,13 +65,10 @@ class Probe:
         assert (yd + xd) == 1, "Must be neighbour"   # move is one square vert or horiz
         self.dirn = chosenMv
         self.path.append(nextSq)
-        #if trailNo == 2:
-         #   print((nextSq.row, nextSq.col), end="")
         nextSq.setTrailNo(trailNo)
         self.sq = nextSq
         self.xPos = nextSq.col
         self.yPos = nextSq.row
-        #print("p" + str((self.yPos, self.xPos)), end="")
         return nextSq
     
     def randomChoice(self, moves: list[int]) -> int:
