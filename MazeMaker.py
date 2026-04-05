@@ -1,61 +1,73 @@
 #******************************************************************************************
 #
-# MazeMaker.py: controlling code for maze maker
+# MazeMaker.py: controlling code for maze maker: designer only (revision in progress)
 # 
-# Version 0.94
-# Last updated 15.12.2025 10:36
+# Version 0.4
+# Last updated 04.04.2026 15:42
 #  
 # *****************************************************************************************
 
-from matplotlib import pyplot as plt
-import matplotlib.animation as anim
-from typing import cast, List
+#from matplotlib import pyplot as plt
+#import matplotlib.animation as anim
+from typing import List
 import random
 from datetime import datetime
 #import time
-import sys
+#import sys
 from Square import Square, MMException
 from Probe import Probe
-from Maisie import Maisie
 from View import View
+import math
 
 print()
-mazeDims = 0
+ht = 0
+wid = 0
+# First, get maze size (height, width) from user
 ctnu = True
 while ctnu:
     try:
-        mazeDims = int(input("\nSize of maze (NxN)"))
+        ht = int(input("\nHeight of maze:"))
+        ctnu = False
+    except ValueError:
+        print("Number unrecognised: try again!")
+ctnu = True
+while ctnu:
+    try:
+        wid = int(input("\nWidth of maze:"))
         ctnu = False
     except ValueError:
         print("Number unrecognised: try again!")
 
-sqSize = 10
+sqSize = 10 # actaully square: unimportant as just for display!
 startCol = 0
 startRow = 0
 endCol = 0
 endRow = 0
 retries = 0
-mz = [[Square(r, c) for c in range(0, mazeDims)] for r in range(mazeDims)]
+mz = [[Square(r, c) for c in range(0, wid)] for r in range(ht)]
 sqStart = mz[0][0] # to make sqStart a Square object
 sqTarget = mz[0][0] # to make sqTarget a Square object
 p = Probe(sqStart, 0)
-vu = View(mazeDims, sqSize)
+vu = View(ht, wid, sqSize)
 
 # -----------------------------------------------------------------------------------------------------
 def startup() -> None:
     # Code which only needs to run once
     global minDamp
-    global mazeDims
+    global h
     global mz
+    global ht
+    global wid
 
-    minDamp = mazeDims / 2 + 1
-    Square.setup(mazeDims)
+    z = int(math.sqrt(ht * wid))
+    minDamp = z / 2 + 1
+    Square.setup(ht, wid)
     dt = datetime.timestamp(datetime.now())
     random.seed(dt) # seed randomizer
 
     #set up neighbours: row and column 0 already set to None
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             if x > 0:
                 mz[y][x].setNeighbour(1, mz[y][x-1])
                 mz[y][x-1].setNeighbour(3, mz[y][x])
@@ -63,16 +75,22 @@ def startup() -> None:
                 mz[y][x].setNeighbour(2, mz[y-1][x])
                 mz[y-1][x].setNeighbour(0, mz[y][x])
 
-def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only for trNo == 1 or 2 
+def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only for trNo == 1 or 2
+    '''prepare() resets values needed at the start of trails 1 and 2 (yellow, pink)
+        parameters:
+            prevTgt: Square object: the Square at the bottom left of the target quad (if already known)
+            trNo: int: trail number (1 or 2)
+        returns: tuple[Square, Square]: tuple of 2 Square object representing start square and target square (as defined 2 lines above)
+    ''' 
     # (1) Initial creation of maze----------------------------------------------------------------------------
-    global mazeDims
+    global ht, wid
     global retries
     global sqTarget
     global startCol
     
     # Clean up first
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             sq = mz[y][x]
             sq.code = 15
             sq.setTrailNo(0)
@@ -83,17 +101,26 @@ def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only 
     
     # further initialization for trail 1 only------------------------------------------------------------------
     if (trNo == 1):
-        startCol = random.randint(0, mazeDims - 1)
+        # Set startSquare and target square (bottom left corner of quad)
+        startCol = random.randint(0, wid - 1)
         Square.startCol = startCol
         startRow = 0
-        i = int(mazeDims / 2)
-        targetCol = random.randint(i, mazeDims - 2)
-        targetRow = random.randint(i, mazeDims - 2)
         print ("Start square: " + str((startRow, startCol)) + "; ", end="")
+
+        minRow = int(ht / 2)
+        if minRow == ht - 2:
+            targetRow = minRow
+        else:
+            targetRow = random.randint(minRow, ht - 2)
+    
+        assert int(ht - 2) >= minRow, "Valid range for target row"
+        targetCol = random.randint(0, wid - 2)
+        assert int(wid - 2) > 0, "Valid range for target column"
         
         # NB: the following are set up in the Square __init__() method: trailNo => 0, code to 15
         
         sqStart = mz[startRow][startCol]
+        sqStart.start = True
         sqStart.setTrailNo(1)
         sqTarget = mz[targetRow][targetCol]
         print("Target square: " + str((targetRow, targetCol)))
@@ -102,23 +129,27 @@ def prepare(prevTgt: Square, trNo: int) -> tuple[Square, Square]:    # use only 
     retries = 0
 
     # Assign "attraction" votes--------------------------------------------------
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             mz[y][x].calcVotes(targetRow, targetCol)
-        
+
     return (sqStart, sqTarget)
+
 # END METHOD prepare()------------------------------------------------------------------------------------
 
 def setupTargetQuad(sqTgt: Square, tf: bool) -> None:
-    # set all 4 target flags and delete fences between them (tf == True) else reverse the changes
-
-    #print("Target quad setup:" + str((sqTgt.row, sqTgt.col)) + " " + str(tf))
+    '''setupTargetQuad(): set all 4 target flags and delete fences between them (tf == True) else reverse the changes
+        parameters:
+            sqTgt: Square object at bottom left corner of target quad
+            tf: boolean: clears the inner quad fences if true, else replaces them
+        returns: None
+    '''
     targetRow = sqTgt.row
     targetCol = sqTgt.col
     for i in range(0,2):
         for j in range(0,2):
             mz[targetRow + i][targetCol + j].setTarget(tf)
-            mz[targetRow][targetRow].setTrailNo(0)
+            mz[targetRow][targetCol].setTrailNo(0)
     if tf:  # delete central fences
         mz[targetRow][targetCol].code = 6
         mz[targetRow + 1][targetCol].code = 3
@@ -134,9 +165,13 @@ def setupTargetQuad(sqTgt: Square, tf: bool) -> None:
 # Trail makers section----------------------------------------------------------------------------
 
 def cleanup(trNo) -> None:
+    '''cleanup(): resets Squares' trailNo attribute
+        parameter: trNo: int trail number for cleanup
+        returns: None
+    '''
     count = 0
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             if mz[y][x].getTrailNo() == trNo: #????
                 mz[y][x].setTrailNo(0)
                 count += 1
@@ -144,7 +179,14 @@ def cleanup(trNo) -> None:
 
 # innermost loop: makes trail to target OR culdesac
 def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
-    global mazeDims
+    '''trailMake(): creates trail to target or culdesac (depends on random chance)
+    parameters:
+        startSq: Square object where new trail begins
+        p: Probe object to do the "trailblazing"
+        trNo: tail number
+    returns: bool: True if Target reached, else False (culdesac)
+    '''
+    global ht, wid
     global retries
     
     innerLoopCount = 0
@@ -155,7 +197,7 @@ def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
 
     while not bStop:
         innerLoopCount += 1
-        sq = p.move(trNo, mazeDims)
+        sq = p.move(trNo)
         if sq is not None:
             assert len(p.path) > 0
             p.setSquare(sq, trNo)
@@ -169,7 +211,7 @@ def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
             assert(p.culdesac)
             print("CDS;", end="")
             bStop = True
-            p.removeTrail(trNo)
+            p.removeTrail()
             assert len(p.path) == 0, "probe trail not empty!"
             #p.reset(startSq, trNo)
 
@@ -184,19 +226,32 @@ def trailMake(startSq: Square, p: Probe, trNo: int)-> bool: # True if at target
 
     return p.atTarget()
     
-def cdsTrailMake(startSq: Square, mazeDims: int, p: Probe, trNo: int)-> bool: 
+def cdsTrailMake(startSq: Square, p: Probe, trNo: int)-> bool:
+    '''cdsTailMake(): code to create all trials after the first two, certain to end in a culdesac
+        parameters:
+            startSq: Square object where trail starts
+            p: Probe object to blaze the trail
+            trNo: int: invariably == 3 (generic for all but trails 1 and 2)
+        returns: bool: True if culdesac ending: should always be so!
+    ''' 
     innerLoopCount = 0
     p.reset(startSq, trNo)
     while not p.culdesac: # loop until culdesac
         innerLoopCount += 1
-        sq = p.move(trNo, mazeDims)
+        sq = p.move(trNo)
         if sq is not None:
             p.setSquare(sq, trNo)
         else:
             assert(p.culdesac)
     return p.culdesac
 
-def t1TrailMake(prevTgt:Square, p: Probe) -> bool:   # keeps trying trail 1 until it's soggy enough
+def t1TrailMake(prevTgt: Square, p: Probe) -> bool: 
+    '''t1TrailMake(): makes trail 1 and checks that enough flooded Squares border it: tail is abandoned and restarted if not so
+        parameters:
+            prevTgt: target Square object (already been set) at bottom-left corner of Target Quad
+            p: Probe object to make trail
+        returns: bool: True if enough wet adjacent squares, else False
+    '''
     global sqStart
     global sqTarget
     global retries
@@ -216,8 +271,6 @@ def t1TrailMake(prevTgt:Square, p: Probe) -> bool:   # keeps trying trail 1 unti
             bOK = trailMake(sqStart, p, 1)  # trail is culdesac or at target
             retries += 1
         sqTarget.flood() # "Flood" the accessible white squares => grey
-        #if mz[0][1].isWet() or mz[1][0].isWet():    # fix a "bug"?
-        #    mz[0][0].wet = True
         bSoggy = isSoggy()
     nDamp = p.makeDamp()
     print ("Path length: " + str(len(p.path)))
@@ -227,6 +280,12 @@ def t1TrailMake(prevTgt:Square, p: Probe) -> bool:   # keeps trying trail 1 unti
     return bSoggy
 
 def t2TrailMake(damps: List[Square], p: Probe) -> bool:
+    '''t2TrailMake(): creates trail 2 from any square on trail 1 with at least one "flooded" neighbour
+    parameters:
+        damps: List[Square]: subset of trail1 Squares which have at least one flooded neighbour (and so a trail 2 starting point candidate)
+        p: Probe object to make the trail
+    returns: bool: always True (assuming retries keep happening) 
+    '''
     global sqTarget
     # (2) Second path: start at any square on 1st trail with "light grey" neighbours -----------------------------
     # not None so OK to cast to Square
@@ -257,6 +316,10 @@ def t2TrailMake(damps: List[Square], p: Probe) -> bool:
     return bOK
 
 def makeTarget1and2() -> None:
+    '''makeTarget1and2(): fills all 4 Target squares with trail value 1 or 2 according to "neighbour" rule
+        parameters: none
+        returns: None
+    '''
     sq1 = sqTarget # TEMP: to make them Square objects only
     sq2 = sqTarget
     ngh: List[Square] = []
@@ -269,18 +332,23 @@ def makeTarget1and2() -> None:
                 sq2 =sq
             if sq.getTrailNo() == 0:
                 ngh.append(sq)
-    assert len(ngh) == 2, "Two white squares in target"
-    if Square.areNeigh(sq1, ngh[0]):
-        ngh[0].setTrailNo(1)
-        ngh[1].setTrailNo(2)
-    else:
-        ngh[0].setTrailNo(2)
-        ngh[1].setTrailNo(1)
+    #assert len(ngh) == 2, "Two white squares in target"
+    lNgh = len(ngh)
+    print ("target white squares count: " + str(lNgh))
+    for z in range(0, lNgh):
+        if Square.areNeigh(sq1, ngh[z]):
+            ngh[z].setTrailNo(1)
+        else:
+            ngh[z].setTrailNo(2)
 
 # Culdesac and mopup section--------------------------------------------------------------------
 
 def addCulDeSacs() -> None:
-    listA: List[Square] = twoTrailSquares(1, 2)
+    '''addCulDeSacs(): code to add culdesacs trails until algorithm becomes inefficient
+        parameters:none
+        returns: None
+    '''
+    listA: List[Square] = twoTrailSquares(1, 2) # list of Squares in either trail1 or trail 2
     listB: List[Square] = []
 
     #dryAll()
@@ -301,10 +369,10 @@ def addCulDeSacs() -> None:
 
             # Now make cds trail
             p.reset(sqi, 3)
-            p.removeTrail(3)
+            p.removeTrail()
             count = 0
             while not p.culdesac:
-                cdsTrailMake(sqi, mazeDims, p, 3)
+                cdsTrailMake(sqi, p, 3)
                 Square.setFenceBetween(sqi, p.path[0], False)
                 p.removeTrailFences()
                 count += 1
@@ -312,55 +380,68 @@ def addCulDeSacs() -> None:
             listB.clear()
 
 def mopup() -> None:
+    '''mopup(): more efficient algorithm to add the final few (short) culdesac trails
+        parameters: none
+        returns: None (it will do the job!)
+    '''
     wList = twoTrailSquares(0, 0)
     lng = len(wList)
     for i in range(0, lng):
         if not wList[i].isTarget():
             wList[i].tryYellow()
     
-def cleanupTargetQuad(sqT: Square) -> None:
-    yT = sqT.row
-    xT = sqT.col
-    sq = mz[yT][xT]    
-    cuTQ(sq, 2, 1)
-    cuTQ(sq, 4, 2)
-    cuTM(sq, 6)
-    sq = mz[yT + 1][xT]
-    cuTQ(sq, 2, 1)
-    cuTQ(sq, 1, 0)
-    cuTM(sq, 3)
-    sq = mz[yT][xT + 1]
-    cuTQ(sq, 8, 3)
-    cuTQ(sq, 4, 2)
-    cuTM(sq, 12)
-    sq = mz[yT + 1][xT + 1]
-    cuTQ(sq, 8, 3)
-    cuTQ(sq, 4, 2)
-    cuTM(sq, 9)
+#def cleanupTargetQuad(sqT: Square) -> None:
+ #   '''cleanupTargetQuad(): '''
+  #  yT = sqT.row
+   # xT = sqT.col
+    #sq = mz[yT][xT]    
+#    cuTQ(sq, 2, 1)
+ #   cuTQ(sq, 4, 2)
+  #  cuTM(sq, 6)
+   # sq = mz[yT + 1][xT]
+    #cuTQ(sq, 2, 1)
+#    cuTQ(sq, 1, 0)
+ #   cuTM(sq, 3)
+  #  sq = mz[yT][xT + 1]
+   # cuTQ(sq, 8, 3)
+    #cuTQ(sq, 4, 2)
+#    cuTM(sq, 12)
+ #   sq = mz[yT + 1][xT + 1]
+  #  cuTQ(sq, 8, 3)
+   # cuTQ(sq, 4, 2)
+    #cuTM(sq, 9)
 
-def cuTQ(sq: Square, flg:int, dirn: int) -> None: # restore outer wall
-    if (sq.code & flg) == 0: # no fence
-        ngh = sq.getNeighbour(dirn)
-        if ngh is not None:
-            if ngh.trailNo > 2:
-                Square.setFenceBetween(sq, ngh, True)   #put in fence
+#def cuTQ(sq: Square, flg:int, dirn: int) -> None: # restore outer wall
+ #   if (sq.code & flg) == 0: # no fence
+  #      ngh = sq.getNeighbour(dirn)
+   #     if ngh is not None:
+    #        if ngh.trailNo > 2:
+     #           Square.setFenceBetween(sq, ngh, True)   #put in fence
 
-def cuTM(sq: Square, flag: int) -> None: # clean up target middle
-    sq.code = sq.code & flag
+#def cuTM(sq: Square, flag: int) -> None: # clean up target middle
+ #   sq.code = sq.code & flag
 
 
 # Helper and support methods----------------------------------------------------
 
 def isSoggy() -> bool:
-    # Get a list of squares on trail1 with at least one "wet" neighbour
+    '''isSoggy() Checks if trail 1 contains more than minDamp number of squares with at least one "wet" neighbour
+        parameters: none
+        returns: bool: True if enough such squares, otherwise False
+    '''
     global p
     damp = p.getDampTrail()
     nDamp = len(damp)
-#    print ("No. damp: " + str(nDamp))
     bSoggy = nDamp >= minDamp
     return bSoggy
 
 def chooseT2Start(damps: List[Square], tgt: Square) -> Square:
+    '''chooseT2Start(): makes a random choie of Square on trail 1 with at least one "wet" neighbour
+        parameters:
+            damps: List[Square]: list of qualifying sqaures
+            tgt: target Square (starting square must not be too close)
+        returns: Square: chosen starting square for trail 2
+    '''
     global p
     nDamp = len(damps)
     assert nDamp > 0, "no damp!"
@@ -378,31 +459,40 @@ def chooseT2Start(damps: List[Square], tgt: Square) -> Square:
     return sq2
 
 def tooClose(sqA: Square, sqB: Square) -> bool:
+    '''tooClose(): returns whether 2 squares are "too close" to each other, using algorithm internal to this method
+        parameters:
+            sqA: Square: first square to compare for "closeness"
+            sqB: Square: second square to compare
+        returns: bool: True if too close, else False
+    '''
     yd = abs(sqA.row - sqB.row)
     xd = abs(sqA.col - sqB.col)
     return (xd + yd) < 5
     
-def twoTrailSquares(trNoA: int, trNoB) -> List[Square]:
+def twoTrailSquares(trNoA: int, trNoB: int) -> List[Square]:
+    '''twoTrailSquares(): returns a list of squares with either of 2 trail numbers
+        parameters:
+            trNoA: int: index number of first trail
+            trNoB: int: index number of second trail
+        returns: List[Square]: list of squares in either of 2 trails
+    '''
+    global ht, wid
     whites = []
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             sq = mz[y][x]
             if ((sq.trailNo == trNoA) or (sq.trailNo == trNoB)):# and not isTargetNeighbour(sq):
                 whites.append(sq)
     return whites
 
-#def isTargetNeighbour(sq: Square) -> bool: # True if at least one neighbour is a green square
- #   bOK = True
-  #  for i in range(4):
-   #     ngh = sq.getNeighbour(i)
-    #    if ngh is not None:
-     #       if ngh.target:
-      #          bOK = False
-    #return bOK
-
 def scoreChecker() -> bool: # checks codes on both sides of the fence are consistent
-    for y in range(1, mazeDims):
-        for x in range(1, mazeDims):
+    '''scoreChecker(): scans whole maze and checks that the presence or absence of the single fence between them is consistently coded in both squares (failsafe check)
+        parameters: none
+        returns: bool: True if whole maze is consistently coded, otherwise False
+    '''
+    global ht, wid
+    for y in range(1, ht):
+        for x in range(1, wid):
             c1 = mz[y][x].code
             b1 = (c1 & 2) != 0
             c2 = mz[y][x - 1].code
@@ -416,33 +506,34 @@ def scoreChecker() -> bool: # checks codes on both sides of the fence are consis
     return  True# TEMP
 
 def trailCount(trNo: int) -> int:
+    '''trailCount() counts the length (number of Squares) of a trail
+        parameter: trNo: int: number of trail to check
+        returns: int: trail length
+    '''
+    global ht, wid
     count = 0
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    for y in range(0, ht):
+        for x in range(0, wid):
             if mz[y][x].getTrailNo() == trNo:
                 count += 1
                 #print((y, x), end="")
     return count       
 
-def whiteCount() -> int:
+def whiteCount() -> int:    # wrapper
     return trailCount(0)
 
-def pinkCount() -> int:
+def pinkCount() -> int: # wrapper
     return trailCount(2)       
 
-def mazeToMaisie(destMz: List[List[Square]]) -> None:
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
-            destMz[y][x].code = mz[y][x].code
-            #print(str(mz[y][x].code) + ";", end ="")
-        #print()
-    return
-
 def dryAll() -> None:
-    for y in range(0, mazeDims):
-        for x in range(0, mazeDims):
+    '''dryAll(): code to reset all Squares' "wet" attribute to False
+    parameters: none
+    returns: None
+    '''
+    global ht, wid
+    for y in range(0, ht):
+        for x in range(0, wid):
             mz[y][x].wet = False
-
 
 #def fencesToFile() -> None:
  #   chars = " |_L"
@@ -469,7 +560,7 @@ b = True
 while b:
     try:
         t1TrailMake(sqTarget, p)
-        t2TrailMake(p.damp ,p)
+        t2TrailMake(p.damp , p)
         b = False
     except MMException as ex:
         pass
@@ -478,7 +569,7 @@ while b:
 
 makeTarget1and2()
 # Now fill in the other squares with "culdesac" trails
-maxWhiteCount = int(mazeDims * mazeDims / 20)
+maxWhiteCount = int(ht * wid / 20)
 print("-------------------------------------------------------------------------")
 print ("White pre culdesacs: " + str(whiteCount()) + "; ", end="")
 addCulDeSacs()
@@ -489,31 +580,11 @@ print ("White pre mop-up: " + str(whiteCount()) + "; ", end="")
 while whiteCount() > 0:
     mopup()
 print ("mopped up!")
-scoreChecker()
+scoreChecker() # to check that scores are consistent for one fence from both sides
 print()
 print("=========================================================================")
 print()
-vu.drawMM(mz) # MazeMaker (left side) maze
-#fencesToFile()
-#========================= Maisie Stuff!=============================================
-mai = Maisie(mazeDims)
-vu.drawEmptyMais(mai) # Maisie (right side) maze
-
-mai.startup(startCol) #sets up neighbours and sets outer fences
-mazeToMaisie(mai.rlMz) # xfers code values from original maze to Maisie's copy 
-print ("Maisie initial pos: " + str((mai.row, mai.col)))
-passNo = 1
-
-plt.sca(vu.axMais)
-
-mai.scan()
-ssq = mai.mmz[mai.row][mai.col]
-ssq.drawMeMaisie(vu.axMais, True)
-ssq.numVisits += 1
-
-mai.choose(True)
-mai.drawMe(vu.axMais)
-ani = anim.FuncAnimation(vu.fig, vu.vwUpdate1, frames=mai.gen1, interval=120, blit=True, repeat=False, cache_frame_data=False)
-vu.show()
-for i in range (1, 4):
-    print("Steps in trail " + str(i) + ": " + str(mai.steps[i - 1]))
+numFencesRaw = vu.drawMM(mz) # MazeMaker (left side) maze
+numFencesInner = int(numFencesRaw / 2 - wid - ht) # NB: numFencesRaw is n even number!
+numFencesOuter = (wid + ht) * 2
+vu.show(numFencesInner, numFencesOuter)
